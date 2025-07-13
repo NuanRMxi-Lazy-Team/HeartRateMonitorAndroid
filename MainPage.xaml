@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="HeartRateMonitorAndroid.MainPage"
+             BackgroundColor="#F8F9FA">
+
+    <Grid Padding="20" RowSpacing="20" ColumnSpacing="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 状态和心率标签 -->
+        <VerticalStackLayout Grid.Row="0" Spacing="10">
+            <Label x:Name="statusLabel" 
+                   Text="正在初始化..." 
+                   FontSize="18" 
+                   TextColor="#6C757D"
+                   HorizontalOptions="Center" />
+            <Label x:Name="heartRateLabel" 
+                   Text="心率: -- bpm" 
+                   FontSize="36" 
+                   FontAttributes="Bold"
+                   TextColor="#FF4757"
+                   Margin="0,5,0,5"
+                   HorizontalOptions="Center" />
+        </VerticalStackLayout>
+
+        <!-- 心率统计信息 -->
+        <Grid Grid.Row="1" ColumnSpacing="15">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 最低心率 -->
+            <Frame Grid.Column="0" BorderColor="#E9ECEF" BackgroundColor="#E8F5FE" CornerRadius="12" Padding="10" HasShadow="True">
+                <VerticalStackLayout HorizontalOptions="Center">
+                    <Label Text="最低心率" FontSize="14" TextColor="#2E86DE" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="minHeartRateLabel" Text="--" FontSize="24" TextColor="#0056B3" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label Text="bpm" FontSize="12" TextColor="#2E86DE" HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- 平均心率 -->
+            <Frame Grid.Column="1" BorderColor="#E9ECEF" BackgroundColor="#FFF5F5" CornerRadius="12" Padding="10" HasShadow="True">
+                <VerticalStackLayout HorizontalOptions="Center">
+                    <Label Text="平均心率" FontSize="14" TextColor="#FF4757" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="avgHeartRateLabel" Text="--" FontSize="24" TextColor="#E01B30" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label Text="bpm" FontSize="12" TextColor="#FF4757" HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- 最高心率 -->
+            <Frame Grid.Column="2" BorderColor="#E9ECEF" BackgroundColor="#FFF0E5" CornerRadius="12" Padding="10" HasShadow="True">
+                <VerticalStackLayout HorizontalOptions="Center">
+                    <Label Text="最高心率" FontSize="14" TextColor="#FF8832" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="maxHeartRateLabel" Text="--" FontSize="24" TextColor="#E65C00" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label Text="bpm" FontSize="12" TextColor="#FF8832" HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Frame>
+        </Grid>
+
+        <!-- 心率图表 -->
+        <Frame Grid.Row="2" BorderColor="#E9ECEF" CornerRadius="15" Padding="10" Margin="0,5,0,10" 
+               BackgroundColor="#F8F9FA" HasShadow="True">
+            <Grid>
+                <GraphicsView x:Name="heartRateGraphicsView" HeightRequest="250" WidthRequest="300" BackgroundColor="#F8F9FA"/>
+                <Label x:Name="noDataLabel" Text="暂无数据" HorizontalOptions="Center" VerticalOptions="Center" 
+                       IsVisible="True" TextColor="#6C757D" FontSize="16" FontAttributes="Italic"/>
+            </Grid>
+        </Frame>
+
+        <!-- 按钮区域 -->
+        <Grid Grid.Row="3" ColumnSpacing="15" RowSpacing="15">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Row="0" Grid.Column="0" Text="开始扫描" Clicked="OnScanClicked" 
+                    HorizontalOptions="FillAndExpand"
+                    BackgroundColor="#2E86DE"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    CornerRadius="10"
+                    HeightRequest="50"/>
+            <Button Grid.Row="0" Grid.Column="1" x:Name="backgroundButton" Text="后台运行" Clicked="OnBackgroundClicked" 
+                    HorizontalOptions="FillAndExpand"
+                    BackgroundColor="#FF4757"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    CornerRadius="10"
+                    HeightRequest="50"/>
+            <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" x:Name="webSocketButton" Text="配置数据上传" Clicked="OnWebSocketSettingsClicked" 
+                    HorizontalOptions="FillAndExpand"
+                    BackgroundColor="#6C757D"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    CornerRadius="10"
+                    HeightRequest="50"/>
+        </Grid>
+    </Grid>
+</ContentPage>
