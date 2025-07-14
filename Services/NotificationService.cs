@@ -1,119 +1,83 @@
-﻿namespace HeartRateMonitorAndroid.Services
+﻿using HeartRateMonitorAndroid.Services.Platform;
+
+namespace HeartRateMonitorAndroid.Services
 {
-    // 跨平台通知服务
+    /// <summary>
+    /// 通知服务工厂
+    /// </summary>
     public static class NotificationService
     {
-        // 常量定义
-        private const string CHANNEL_ID = "HeartRateMonitorChannel";
-        private const int NOTIFICATION_ID = 100;
+        private static readonly INotificationService _instance;
 
-        // 初始化通知服务
-        public static void Initialize()
+        /// <summary>
+        /// 静态构造函数，根据平台创建对应的通知服务实现
+        /// </summary>
+        static NotificationService()
         {
-            // 根据平台初始化
             if (DeviceInfo.Platform == DevicePlatform.Android)
-            {
-#if ANDROID
-                Platforms.Android.AndroidNotificationHelper.CreateNotificationChannel(
-                    CHANNEL_ID, 
-                    "心率监测", 
-                    "显示实时心率数据");
-#endif
-            }
+                _instance = new AndroidNotificationService();
             else if (DeviceInfo.Platform == DevicePlatform.iOS)
-            {
-#if IOS
-                // 请求iOS通知权限
-                Platforms.iOS.IosNotificationHelper.RequestNotificationPermission().ConfigureAwait(false);
-#endif
-            }
+                _instance = new IosNotificationService();
+            else if (DeviceInfo.Platform == DevicePlatform.WinUI)
+                _instance = new WindowsNotificationService();
+            else _instance = new NullNotificationService();
+            // 初始化通知服务
+            _instance.Initialize();
         }
 
-        // 显示心率通知
+        /// <summary>
+        /// 获取当前平台的通知服务实例
+        /// </summary>
+        public static INotificationService Current => _instance;
+
+        #region 便捷方法
+
+        /// <summary>
+        /// 显示心率通知
+        /// </summary>
         public static void ShowHeartRateNotification(int currentHeartRate, double avgHeartRate, int minHeartRate, int maxHeartRate, TimeSpan duration)
         {
-            string title = "心率监测";
-            string content = $"当前心率: {currentHeartRate} bpm    平均: {avgHeartRate:0} bpm";
-            string bigText = $"当前心率: {currentHeartRate} bpm\n监测时长: {duration.Hours:00}:{duration.Minutes:00}:{duration.Seconds:00}\n最低: {minHeartRate} bpm | 最高: {maxHeartRate} bpm";
-
-            if (DeviceInfo.Platform == DevicePlatform.Android)
-            {
-#if ANDROID
-                Platforms.Android.AndroidNotificationHelper.ShowBigTextNotification(
-                    CHANNEL_ID,
-                    NOTIFICATION_ID,
-                    title,
-                    content,
-                    bigText,
-                    Resource.Drawable.notification_icon_background,
-                    true);
-#endif
-            }
-            else if (DeviceInfo.Platform == DevicePlatform.iOS)
-            {
-#if IOS
-                Platforms.iOS.IosNotificationHelper.ShowNotification(title, content);
-#endif
-            }
-            else if (DeviceInfo.Platform == DevicePlatform.WinUI)
-            {
-#if WINDOWS
-                Platforms.Windows.WindowsNotificationHelper.ShowNotification(title, content);
-#endif
-            }
+            _instance.ShowHeartRateNotification(currentHeartRate, avgHeartRate, minHeartRate, maxHeartRate, duration);
         }
 
-        // 取消通知
+        /// <summary>
+        /// 取消通知
+        /// </summary>
         public static void CancelNotification()
         {
-            if (DeviceInfo.Platform == DevicePlatform.Android)
-            {
-#if ANDROID
-                Platforms.Android.AndroidNotificationHelper.CancelNotification(NOTIFICATION_ID);
-#endif
-            }
-            else if (DeviceInfo.Platform == DevicePlatform.iOS)
-            {
-#if IOS
-                Platforms.iOS.IosNotificationHelper.CancelAllNotifications();
-#endif
-            }
-            else if (DeviceInfo.Platform == DevicePlatform.WinUI)
-            {
-#if WINDOWS
-                Platforms.Windows.WindowsNotificationHelper.CancelNotification();
-#endif
-            }
+            _instance.CancelNotification();
         }
 
-        // 显示重连通知
+        /// <summary>
+        /// 显示重连通知
+        /// </summary>
         public static void ShowReconnectionNotification(string title, string message, int attemptCount)
         {
-            const int RECONNECTION_NOTIFICATION_ID = 101; // 使用不同的ID，避免覆盖心率通知
+            _instance.ShowReconnectionNotification(title, message, attemptCount);
+        }
 
-            if (DeviceInfo.Platform == DevicePlatform.Android)
+        #endregion
+
+        /// <summary>
+        /// 空实现，用于不支持的平台
+        /// </summary>
+        private class NullNotificationService : INotificationService
+        {
+            public void Initialize() { }
+
+            public void ShowHeartRateNotification(int currentHeartRate, double avgHeartRate, int minHeartRate, int maxHeartRate, TimeSpan duration)
             {
-#if ANDROID
-                Platforms.Android.AndroidNotificationHelper.ShowNormalNotification(
-                    CHANNEL_ID,
-                    RECONNECTION_NOTIFICATION_ID,
-                    title,
-                    message,
-                    Resource.Drawable.notification_icon_background,
-                    false); // 不使用前台服务，只显示普通通知
-#endif
+                // 空实现
             }
-            else if (DeviceInfo.Platform == DevicePlatform.iOS)
+
+            public void CancelNotification()
             {
-#if IOS
-                Platforms.iOS.IosNotificationHelper.ShowNotification(title, message);
-#endif
+                // 空实现
             }
-            else if (DeviceInfo.Platform == DevicePlatform.WinUI)
+
+            public void ShowReconnectionNotification(string title, string message, int attemptCount)
             {
-#if WINDOWS
-                Platforms.Windows.WindowsNotificationHelper.ShowNotification(title, message);
-#endif
+                // 空实现
             }
         }
     }
