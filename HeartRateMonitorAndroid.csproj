@@ -21,10 +21,10 @@
         <Nullable>enable</Nullable>
 
         <!-- Display name -->
-        <ApplicationTitle>HeartRateMonitorAndroid</ApplicationTitle>
+        <ApplicationTitle>心率广播监视器</ApplicationTitle>
 
         <!-- App Identifier -->
-        <ApplicationId>com.companyname.heartratemonitorandroid</ApplicationId>
+        <ApplicationId>com.nuanrmxi.heartratemonitor</ApplicationId>
 
         <!-- Versions -->
         <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
@@ -43,7 +43,8 @@
 
     <ItemGroup>
         <!-- App Icon -->
-        <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4"/>
+        <!--<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4"/>-->
+        <MauiIcon Include="Resources\AppIcon\appicon.jpg"/>
 
         <!-- Splash Screen -->
         <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128"/>
