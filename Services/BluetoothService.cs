@@ -22,6 +22,7 @@ namespace HeartRateMonitorAndroid.Services
         private readonly IAdapter _adapter;
         private bool _isConnecting = false;
         private IDevice _connectedDevice = null;
+        private int _lastHeartRate = 0;
 
         /// <summary>
         /// 心率数据更新事件
@@ -52,6 +53,11 @@ namespace HeartRateMonitorAndroid.Services
         /// 是否正在扫描
         /// </summary>
         public bool IsScanning => _adapter.IsScanning;
+
+        /// <summary>
+        /// 获取最新的心率值
+        /// </summary>
+        public int LastHeartRate => _lastHeartRate;
 
         /// <summary>
         /// 初始化蓝牙服务
@@ -200,6 +206,9 @@ namespace HeartRateMonitorAndroid.Services
                     // 保存连接的设备引用
                     _connectedDevice = device;
 
+                    // 保存设备地址以供保活服务使用
+                    SaveLastConnectedDeviceAddress(device.Id.ToString());
+
                     // 获取心率服务
                     Debug.WriteLine($"{TAG}: 尝试获取心率服务 {HEART_RATE_SERVICE_UUID}");
                     var heartRateService = await device.GetServiceAsync(HEART_RATE_SERVICE_UUID);
@@ -244,6 +253,9 @@ namespace HeartRateMonitorAndroid.Services
                         {
                             return; // 数据不完整
                         }
+
+                        // 更新最新心率值
+                        _lastHeartRate = heartRate;
 
                         // 触发心率更新事件
                         HeartRateUpdated?.Invoke(heartRate);
@@ -425,6 +437,62 @@ namespace HeartRateMonitorAndroid.Services
             }
 
             _adapter.DeviceDiscovered -= OnDeviceDiscovered;
+        }
+
+        /// <summary>
+        /// 保存上次连接的设备地址
+        /// </summary>
+        private void SaveLastConnectedDeviceAddress(string deviceId)
+        {
+            try
+            {
+                // 使用Preferences来保存设备地址，这样可以跨平台工作
+                Microsoft.Maui.Storage.Preferences.Set("LastConnectedDevice", deviceId);
+                Debug.WriteLine($"{TAG}: 已保存设备地址: {deviceId}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"{TAG}: 保存设备地址失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取上次连接的设备地址
+        /// </summary>
+        public string GetLastConnectedDeviceAddress()
+        {
+            try
+            {
+                var deviceId = Microsoft.Maui.Storage.Preferences.Get("LastConnectedDevice", null);
+                Debug.WriteLine($"{TAG}: 获取保存的设备地址: {deviceId ?? "无"}");
+                return deviceId;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"{TAG}: 获取设备地址失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 根据设备地址连接到设备
+        /// </summary>
+        public async Task<bool> ConnectToDeviceByAddressAsync(string deviceAddress)
+        {
+            try
+            {
+                Debug.WriteLine($"{TAG}: 尝试连接到设备地址: {deviceAddress}");
+                
+                // Plugin.BLE没有GetSystemConnectedOrPairedDevicesAsync方法
+                // 我们需要通过扫描来查找设备
+                Debug.WriteLine($"{TAG}: 开始扫描寻找目标设备");
+                return false; // 返回false表示需要通过扫描来找到设备
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"{TAG}: 按地址连接设备失败: {ex.Message}");
+                return false;
+            }
         }
     }
 }

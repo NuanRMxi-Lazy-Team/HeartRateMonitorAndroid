@@ -190,6 +190,18 @@ public class WebSocketService
             }
         }
 
+        public async Task SendHeartRateAsync(int heartRate)
+        {
+            var heartRateData = new HeartRateData
+            {
+                HeartRate = heartRate,
+                Timestamp = DateTime.Now,
+                DeviceName = "Android Heart Rate Monitor"
+            };
+
+            await SendHeartRateDataAsync(heartRateData);
+        }
+
         public async Task SendHeartRateDataAsync(HeartRateData data)
         {
             // 检查WebSocket状态
