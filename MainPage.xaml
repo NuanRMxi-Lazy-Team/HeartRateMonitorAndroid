@@ -2,34 +2,84 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="HeartRateMonitorAndroid.MainPage"
-             BackgroundColor="#F8F9FA">
+             BackgroundColor="#F8F9FA"
+             Title="心率监测">
 
-    <Grid Padding="20" RowSpacing="20" ColumnSpacing="20">
+    <Grid Padding="20" RowSpacing="20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 状态和心率标签 -->
-        <VerticalStackLayout Grid.Row="0" Spacing="10">
-            <Label x:Name="statusLabel" 
-                   Text="正在初始化..." 
-                   FontSize="18" 
-                   TextColor="#6C757D"
-                   HorizontalOptions="Center" />
-            <Label x:Name="heartRateLabel" 
-                   Text="心率: -- bpm" 
-                   FontSize="36" 
-                   FontAttributes="Bold"
-                   TextColor="#FF4757"
-                   Margin="0,5,0,5"
-                   HorizontalOptions="Center" />
-        </VerticalStackLayout>
+        <!-- 服务状态指示器 -->
+        <Frame Grid.Row="0" BorderColor="#E9ECEF" CornerRadius="15" Padding="15" 
+               BackgroundColor="White" HasShadow="True">
+            <Grid ColumnSpacing="15">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 状态指示灯 -->
+                <Ellipse Grid.Column="0" 
+                         x:Name="statusIndicator"
+                         Fill="#28A745" 
+                         WidthRequest="16" 
+                         HeightRequest="16"
+                         VerticalOptions="Center"/>
+
+                <!-- 状态文本 -->
+                <VerticalStackLayout Grid.Column="1" Spacing="2">
+                    <Label x:Name="serviceStatusLabel" 
+                           Text="后台服务运行中" 
+                           FontSize="16" 
+                           FontAttributes="Bold"
+                           TextColor="#495057"/>
+                    <Label x:Name="connectionStatusLabel" 
+                           Text="正在连接心率设备..." 
+                           FontSize="14" 
+                           TextColor="#6C757D"/>
+                </VerticalStackLayout>
+
+                <!-- 数据上传状态 -->
+                <Label Grid.Column="2"
+                       x:Name="uploadStatusLabel"
+                       Text="已连接"
+                       FontSize="12"
+                       TextColor="#28A745"
+                       VerticalOptions="Center"
+                       HorizontalOptions="End"/>
+            </Grid>
+        </Frame>
+
+        <!-- 当前心率显示 -->
+        <Frame Grid.Row="1" BorderColor="#E9ECEF" CornerRadius="15" Padding="20" 
+               BackgroundColor="White" HasShadow="True">
+            <VerticalStackLayout HorizontalOptions="Center" Spacing="5">
+                <Label Text="当前心率" 
+                       FontSize="16" 
+                       TextColor="#6C757D"
+                       HorizontalOptions="Center"/>
+                <Label x:Name="heartRateLabel" 
+                       Text="-- bpm" 
+                       FontSize="48" 
+                       FontAttributes="Bold"
+                       TextColor="#FF4757"
+                       HorizontalOptions="Center"/>
+                <Label x:Name="lastUpdateLabel"
+                       Text="等待数据..."
+                       FontSize="12"
+                       TextColor="#ADB5BD"
+                       HorizontalOptions="Center"/>
+            </VerticalStackLayout>
+        </Frame>
 
         <!-- 心率统计信息 -->
-        <Grid Grid.Row="1" ColumnSpacing="15">
+        <Grid Grid.Row="2" ColumnSpacing="10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
@@ -37,75 +87,76 @@
             </Grid.ColumnDefinitions>
 
             <!-- 最低心率 -->
-            <Frame Grid.Column="0" BorderColor="#E9ECEF" BackgroundColor="#E8F5FE" CornerRadius="12" Padding="10" HasShadow="True">
-                <VerticalStackLayout HorizontalOptions="Center">
-                    <Label Text="最低心率" FontSize="14" TextColor="#2E86DE" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label x:Name="minHeartRateLabel" Text="--" FontSize="24" TextColor="#0056B3" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label Text="bpm" FontSize="12" TextColor="#2E86DE" HorizontalOptions="Center"/>
+            <Frame Grid.Column="0" BorderColor="#E9ECEF" BackgroundColor="#E8F5FE" CornerRadius="12" Padding="15" HasShadow="True">
+                <VerticalStackLayout HorizontalOptions="Center" Spacing="3">
+                    <Label Text="最低" FontSize="12" TextColor="#2E86DE" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="minHeartRateLabel" Text="--" FontSize="20" TextColor="#0056B3" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label Text="bpm" FontSize="10" TextColor="#2E86DE" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
             </Frame>
 
             <!-- 平均心率 -->
-            <Frame Grid.Column="1" BorderColor="#E9ECEF" BackgroundColor="#FFF5F5" CornerRadius="12" Padding="10" HasShadow="True">
-                <VerticalStackLayout HorizontalOptions="Center">
-                    <Label Text="平均心率" FontSize="14" TextColor="#FF4757" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label x:Name="avgHeartRateLabel" Text="--" FontSize="24" TextColor="#E01B30" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label Text="bpm" FontSize="12" TextColor="#FF4757" HorizontalOptions="Center"/>
+            <Frame Grid.Column="1" BorderColor="#E9ECEF" BackgroundColor="#FFF5F5" CornerRadius="12" Padding="15" HasShadow="True">
+                <VerticalStackLayout HorizontalOptions="Center" Spacing="3">
+                    <Label Text="平均" FontSize="12" TextColor="#FF4757" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="avgHeartRateLabel" Text="--" FontSize="20" TextColor="#E01B30" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label Text="bpm" FontSize="10" TextColor="#FF4757" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
             </Frame>
 
             <!-- 最高心率 -->
-            <Frame Grid.Column="2" BorderColor="#E9ECEF" BackgroundColor="#FFF0E5" CornerRadius="12" Padding="10" HasShadow="True">
-                <VerticalStackLayout HorizontalOptions="Center">
-                    <Label Text="最高心率" FontSize="14" TextColor="#FF8832" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label x:Name="maxHeartRateLabel" Text="--" FontSize="24" TextColor="#E65C00" FontAttributes="Bold" HorizontalOptions="Center"/>
-                    <Label Text="bpm" FontSize="12" TextColor="#FF8832" HorizontalOptions="Center"/>
+            <Frame Grid.Column="2" BorderColor="#E9ECEF" BackgroundColor="#FFF0E5" CornerRadius="12" Padding="15" HasShadow="True">
+                <VerticalStackLayout HorizontalOptions="Center" Spacing="3">
+                    <Label Text="最高" FontSize="12" TextColor="#FF8832" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label x:Name="maxHeartRateLabel" Text="--" FontSize="20" TextColor="#E65C00" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    <Label Text="bpm" FontSize="10" TextColor="#FF8832" HorizontalOptions="Center"/>
                 </VerticalStackLayout>
             </Frame>
         </Grid>
 
         <!-- 心率图表 -->
-        <Frame Grid.Row="2" BorderColor="#E9ECEF" CornerRadius="15" Padding="10" Margin="0,5,0,10" 
-               BackgroundColor="#F8F9FA" HasShadow="True">
+        <Frame Grid.Row="3" BorderColor="#E9ECEF" CornerRadius="15" Padding="15" 
+               BackgroundColor="White" HasShadow="True">
             <Grid>
-                <GraphicsView x:Name="heartRateGraphicsView" HeightRequest="250" WidthRequest="300" BackgroundColor="#F8F9FA"/>
-                <Label x:Name="noDataLabel" Text="暂无数据" HorizontalOptions="Center" VerticalOptions="Center" 
-                       IsVisible="True" TextColor="#6C757D" FontSize="16" FontAttributes="Italic"/>
+                <GraphicsView x:Name="heartRateGraphicsView" BackgroundColor="White"/>
+                <VerticalStackLayout x:Name="noDataLayout" 
+                                   HorizontalOptions="Center" 
+                                   VerticalOptions="Center"
+                                   IsVisible="True" 
+                                   Spacing="10">
+                    <Label Text="📊" FontSize="40" HorizontalOptions="Center"/>
+                    <Label Text="等待心率数据" 
+                           HorizontalOptions="Center" 
+                           TextColor="#6C757D" 
+                           FontSize="16"/>
+                    <Label Text="后台服务将自动连接设备并获取数据" 
+                           HorizontalOptions="Center" 
+                           TextColor="#ADB5BD" 
+                           FontSize="12"
+                           HorizontalTextAlignment="Center"/>
+                </VerticalStackLayout>
             </Grid>
         </Frame>
 
-        <!-- 按钮区域 -->
-        <Grid Grid.Row="3" ColumnSpacing="15" RowSpacing="15">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+        <!-- 会话信息 -->
+        <Frame Grid.Row="4" BorderColor="#E9ECEF" CornerRadius="15" Padding="15" 
+               BackgroundColor="White" HasShadow="True">
+            <Grid ColumnSpacing="20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-            <Button Grid.Row="0" Grid.Column="0" Text="开始扫描" Clicked="OnScanClicked" 
-                    HorizontalOptions="FillAndExpand"
-                    BackgroundColor="#2E86DE"
-                    TextColor="White"
-                    FontAttributes="Bold"
-                    CornerRadius="10"
-                    HeightRequest="50"/>
-            <Button Grid.Row="0" Grid.Column="1" x:Name="backgroundButton" Text="后台运行" Clicked="OnBackgroundClicked" 
-                    HorizontalOptions="FillAndExpand"
-                    BackgroundColor="#FF4757"
-                    TextColor="White"
-                    FontAttributes="Bold"
-                    CornerRadius="10"
-                    HeightRequest="50"/>
-            <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" x:Name="webSocketButton" Text="配置数据上传" Clicked="OnWebSocketSettingsClicked" 
-                    HorizontalOptions="FillAndExpand"
-                    BackgroundColor="#6C757D"
-                    TextColor="White"
-                    FontAttributes="Bold"
-                    CornerRadius="10"
-                    HeightRequest="50"/>
-        </Grid>
+                <VerticalStackLayout Grid.Column="0" Spacing="3">
+                    <Label Text="监测时长" FontSize="12" TextColor="#6C757D" FontAttributes="Bold"/>
+                    <Label x:Name="durationLabel" Text="00:00:00" FontSize="16" TextColor="#495057" FontAttributes="Bold"/>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Grid.Column="1" Spacing="3">
+                    <Label Text="数据点数" FontSize="12" TextColor="#6C757D" FontAttributes="Bold"/>
+                    <Label x:Name="dataPointsLabel" Text="0" FontSize="16" TextColor="#495057" FontAttributes="Bold"/>
+                </VerticalStackLayout>
+            </Grid>
+        </Frame>
     </Grid>
 </ContentPage>

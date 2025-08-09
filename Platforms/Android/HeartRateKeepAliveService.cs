@@ -21,12 +21,18 @@ namespace HeartRateMonitorAndroid.Platforms.Android
         private const int NOTIFICATION_ID = 1001;
         private const string CHANNEL_ID = "HeartRateMonitorChannel";
         private const string CHANNEL_NAME = "心率监测服务";
+        private const int REPORT_INTERVAL_MS = 1000; // 1秒汇报间隔
         
         private PowerManager.WakeLock _wakeLock;
-        private System.Timers.Timer _heartRateTimer;
         private WebSocketService.HeartRateWebSocketClient _webSocketClient;
         private BluetoothService _bluetoothService;
+        private HeartRateDataService _dataService;
         private bool _isServiceRunning = false;
+        
+        // 定时汇报相关
+        private System.Threading.Timer _reportTimer;
+        private int _latestHeartRate = 0;
+        private readonly object _heartRateLock = new object();
 
         public override void OnCreate()
         {
@@ -41,8 +47,6 @@ namespace HeartRateMonitorAndroid.Platforms.Android
             if (!_isServiceRunning)
             {
                 StartForegroundService();
-                StartHeartRateMonitoring();
-                ScheduleJobService();
                 _isServiceRunning = true;
             }
             
@@ -83,7 +87,7 @@ namespace HeartRateMonitorAndroid.Platforms.Android
             var notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .SetContentTitle("心率监测服务")
                 .SetContentText("正在后台监测心率数据")
-                .SetSmallIcon(Resource.Drawable.abc_dialog_material_background) // 使用系统图标
+                .SetSmallIcon(Resource.Drawable.abc_dialog_material_background)
                 .SetContentIntent(pendingIntent)
                 .SetOngoing(true)
                 .SetPriority(NotificationCompat.PriorityLow)
@@ -106,276 +110,242 @@ namespace HeartRateMonitorAndroid.Platforms.Android
             {
                 System.Diagnostics.Debug.WriteLine("KeepAliveService: 开始初始化服务");
                 
-                // 获取服务实例
-                var serviceProvider = MauiApplication.Current?.Services;
-                _bluetoothService = serviceProvider?.GetService<BluetoothService>();
-                
-                if (_bluetoothService == null)
-                {
-                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 无法获取BluetoothService实例，创建新实例");
-                    _bluetoothService = new BluetoothService();
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 成功获取BluetoothService实例");
-                }
+                // 获取数据服务实例
+                _dataService = HeartRateDataService.Instance;
+                _dataService.UpdateServiceStatus(false, "正在初始化服务...", false);
+
+                // 初始化蓝牙服务
+                _bluetoothService = new BluetoothService();
+                _bluetoothService.StatusUpdated += OnBluetoothStatusUpdated;
+                _bluetoothService.HeartRateUpdated += OnHeartRateDataReceived;
+                _bluetoothService.DeviceDiscovered += OnDeviceDiscovered;
+
+                System.Diagnostics.Debug.WriteLine("KeepAliveService: 蓝牙服务已初始化");
                 
                 // 初始化WebSocket客户端
-                var serverUrl = GetServerUrl();
-                if (!string.IsNullOrEmpty(serverUrl))
-                {
-                    _webSocketClient = new WebSocketService.HeartRateWebSocketClient(serverUrl);
-                    System.Diagnostics.Debug.WriteLine($"KeepAliveService: WebSocket客户端已初始化，服务器: {serverUrl}");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 无法获取服务器URL");
-                }
+                Task.Run(async () => await InitializeWebSocketAsync());
 
-                // 如果蓝牙服务可用，尝试重新连接之前连接的设备
-                if (_bluetoothService != null)
-                {
-                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 启动蓝牙重连任务");
-                    Task.Run(async () => await ReconnectBluetoothDevice());
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 蓝牙服务不可用，跳过蓝牙重连");
-                }
+                // 启动蓝牙连接
+                Task.Run(async () => await StartBluetoothMonitoringAsync());
             }
             catch (System.Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"InitializeServices Error: {ex.Message}");
+                _dataService?.UpdateServiceStatus(false, "服务初始化失败", false);
             }
         }
 
-        private async Task ReconnectBluetoothDevice()
+        private async Task InitializeWebSocketAsync()
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("KeepAliveService: 尝试重新连接蓝牙设备");
-
-                // 检查蓝牙状态
-                var bluetoothState = _bluetoothService.CheckBluetoothState();
-                if (!bluetoothState.Contains("准备就绪"))
+                var serverUrl = GetServerUrl();
+                if (!string.IsNullOrEmpty(serverUrl))
                 {
-                    System.Diagnostics.Debug.WriteLine($"KeepAliveService: 蓝牙状态不可用: {bluetoothState}");
-                    return;
-                }
-
-                // 尝试获取上次连接的设备地址
-                var lastConnectedDeviceAddress = _bluetoothService.GetLastConnectedDeviceAddress();
-                if (!string.IsNullOrEmpty(lastConnectedDeviceAddress))
-                {
-                    System.Diagnostics.Debug.WriteLine($"KeepAliveService: 尝试连接上次的设备: {lastConnectedDeviceAddress}");
+                    _webSocketClient = new WebSocketService.HeartRateWebSocketClient(serverUrl);
+                    await _webSocketClient.ConnectAsync();
                     
-                    // 首先尝试直接连接到已知设备
-                    var directConnectSuccess = await _bluetoothService.ConnectToDeviceByAddressAsync(lastConnectedDeviceAddress);
-                    
-                    if (!directConnectSuccess)
-                    {
-                        System.Diagnostics.Debug.WriteLine("KeepAliveService: 直接连接失败，开始扫描寻找设备");
-                        
-                        // 注册临时设备发现事件处理器
-                        bool deviceFound = false;
-                        Action<Plugin.BLE.Abstractions.Contracts.IDevice> tempDeviceHandler = (device) =>
-                        {
-                            if (device.Id.ToString() == lastConnectedDeviceAddress)
-                            {
-                                deviceFound = true;
-                                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 在扫描中找到目标设备: {device.Name}");
-                                Task.Run(async () => await _bluetoothService.ConnectToDeviceAsync(device));
-                            }
-                        };
-                        
-                        _bluetoothService.DeviceDiscovered += tempDeviceHandler;
-                        
-                        try
-                        {
-                            // 开始扫描
-                            await _bluetoothService.StartScanAsync();
-                            
-                            // 等待10秒寻找目标设备
-                            for (int i = 0; i < 100 && !deviceFound; i++)
-                            {
-                                await Task.Delay(100);
-                            }
-                            
-                            // 停止扫描
-                            await _bluetoothService.StopScanAsync();
-                            
-                            if (deviceFound)
-                            {
-                                System.Diagnostics.Debug.WriteLine("KeepAliveService: 成功找到并连接目标设备");
-                            }
-                            else
-                            {
-                                System.Diagnostics.Debug.WriteLine("KeepAliveService: 未找到目标设备");
-                            }
-                        }
-                        finally
-                        {
-                            _bluetoothService.DeviceDiscovered -= tempDeviceHandler;
-                        }
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine("KeepAliveService: 直接连接成功");
-                    }
+                    _dataService?.UpdateServiceStatus(true, "后台服务运行中", true, serverUrl);
+                    System.Diagnostics.Debug.WriteLine($"KeepAliveService: WebSocket连接成功: {serverUrl}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 没有找到上次连接的设备信息，开始新的扫描");
-                    
-                    // 注册临时设备发现事件处理器
-                    bool anyDeviceFound = false;
-                    Action<Plugin.BLE.Abstractions.Contracts.IDevice> tempDeviceHandler = (device) =>
-                    {
-                        if (!anyDeviceFound)
-                        {
-                            anyDeviceFound = true;
-                            System.Diagnostics.Debug.WriteLine($"KeepAliveService: 发现心率设备: {device.Name}");
-                            Task.Run(async () => await _bluetoothService.ConnectToDeviceAsync(device));
-                        }
-                    };
-                    
-                    _bluetoothService.DeviceDiscovered += tempDeviceHandler;
-                    
-                    try
-                    {
-                        // 如果没有上次连接的设备信息，开始扫描
-                        await _bluetoothService.StartScanAsync();
-                        
-                        // 扫描15秒后停止
-                        await Task.Delay(15000);
-                        await _bluetoothService.StopScanAsync();
-                        
-                        if (anyDeviceFound)
-                        {
-                            System.Diagnostics.Debug.WriteLine("KeepAliveService: 找到并连接了新设备");
-                        }
-                        else
-                        {
-                            System.Diagnostics.Debug.WriteLine("KeepAliveService: 未找到任何心率设备");
-                        }
-                    }
-                    finally
-                    {
-                        _bluetoothService.DeviceDiscovered -= tempDeviceHandler;
-                    }
+                    _dataService?.UpdateServiceStatus(true, "后台服务运行中", false);
+                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 无法获取服务器URL，WebSocket未连接");
                 }
             }
             catch (System.Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ReconnectBluetoothDevice Error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: WebSocket连接失败: {ex.Message}");
+                _dataService?.UpdateServiceStatus(true, "后台服务运行中", false);
             }
         }
 
-        private string GetLastConnectedDeviceAddress()
+        private async Task StartBluetoothMonitoringAsync()
         {
             try
             {
-                // 使用MAUI的Preferences API获取设备地址
-                return Microsoft.Maui.Storage.Preferences.Get("LastConnectedDevice", null);
-            }
-            catch (System.Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"GetLastConnectedDeviceAddress Error: {ex.Message}");
-                return null;
-            }
-        }
+                System.Diagnostics.Debug.WriteLine("KeepAliveService: 开始蓝牙监测");
 
-        private void SaveLastConnectedDeviceAddress(string deviceAddress)
-        {
-            try
-            {
-                var sharedPreferences = GetSharedPreferences("HeartRateMonitor", FileCreationMode.Private);
-                var editor = sharedPreferences.Edit();
-                editor.PutString("LastConnectedDevice", deviceAddress);
-                editor.Apply();
-                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 保存设备地址: {deviceAddress}");
-            }
-            catch (System.Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"SaveLastConnectedDeviceAddress Error: {ex.Message}");
-            }
-        }
-
-        private string GetServerUrl()
-        {
-            try
-            {
-                // 从Resources/Raw/token.txt读取服务器URL
-                using var stream = FileSystem.OpenAppPackageFileAsync("server.txt").Result;
-                using var reader = new StreamReader(stream);
-
-                var contents = reader.ReadToEnd();
-                return contents;
-            }
-            catch
-            {
-                return "wss:///ws.nuanr-mxi.com/ws"; // 默认URL
-            }
-        }
-
-        private void StartHeartRateMonitoring()
-        {
-            _heartRateTimer = new System.Timers.Timer(1000); // 30秒间隔
-            _heartRateTimer.Elapsed += async (sender, e) =>
-            {
-                try
+                // 检查蓝牙状态
+                _bluetoothService.CheckBluetoothState();
+                
+                if (_bluetoothService.IsBluetoothAvailable)
                 {
-                    await MonitorHeartRate();
-                }
-                catch (System.Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Heart rate monitoring error: {ex.Message}");
-                }
-            };
-            _heartRateTimer.Start();
-        }
-
-        private async Task MonitorHeartRate()
-        {
-            try
-            {
-                // 确保WebSocket连接
-                if (_webSocketClient != null)
-                {
-                    await _webSocketClient.ConnectAsync();
+                    _dataService?.UpdateDeviceStatus(false, "", "正在扫描心率设备...");
                     
-                    // 从蓝牙设备获取心率数据
-                    var heartRate = await GetCurrentHeartRate();
-                    if (heartRate > 0)
-                    {
-                        await _webSocketClient.SendHeartRateAsync(heartRate);
-                        UpdateNotification($"最新心率: {heartRate} BPM");
-                    }
+                    // 开始扫描心率设备
+                    await _bluetoothService.StartScanAsync();
+                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 蓝牙扫描已启动");
+                }
+                else
+                {
+                    _dataService?.UpdateDeviceStatus(false, "", "蓝牙不可用");
+                    System.Diagnostics.Debug.WriteLine("KeepAliveService: 蓝牙不可用");
                 }
             }
             catch (System.Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"MonitorHeartRate Error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 蓝牙监测启动失败: {ex.Message}");
+                _dataService?.UpdateDeviceStatus(false, "", "蓝牙监测启动失败");
             }
         }
 
-        private async Task<int> GetCurrentHeartRate()
+        private void OnBluetoothStatusUpdated(string status)
+        {
+            System.Diagnostics.Debug.WriteLine($"KeepAliveService: 蓝牙状态更新: {status}");
+            _dataService?.UpdateDeviceStatus(false, "", status);
+        }
+
+        private void OnHeartRateDataReceived(int heartRate)
         {
             try
             {
-                // 只从蓝牙设备获取真实心率数据
-                if (_bluetoothService?.ConnectedDevice != null)
+                //System.Diagnostics.Debug.WriteLine($"KeepAliveService: 收到心率数据: {heartRate} bpm");
+                
+                // 只更新最新心率值，不立即发送数据
+                lock (_heartRateLock)
                 {
-                    // 从BluetoothService获取最新的心率值
-                    return _bluetoothService.LastHeartRate;
+                    _latestHeartRate = heartRate;
                 }
                 
-                // 如果没有连接设备，返回0表示无数据
-                return 0;
+                //System.Diagnostics.Debug.WriteLine($"KeepAliveService: 心率数据已更新: {heartRate} bpm");
             }
-            catch
+            catch (System.Exception ex)
             {
-                return 0;
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 处理心率数据失败: {ex.Message}");
+            }
+        }
+
+        private async void OnDeviceDiscovered(Plugin.BLE.Abstractions.Contracts.IDevice device)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 发现设备: {device.Name ?? "未知设备"}");
+                
+                _dataService?.UpdateDeviceStatus(false, device.Name ?? "未知设备", $"发现设备: {device.Name ?? "未知设备"}");
+                
+                // 尝试连接设备
+                await _bluetoothService.ConnectToDeviceAsync(device);
+
+                if (_bluetoothService.ConnectedDevice != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"KeepAliveService: 设备连接成功: {device.Name}");
+                    
+                    _dataService?.UpdateDeviceStatus(true, device.Name ?? "未知设备", $"已连接: {device.Name ?? "未知设备"}");
+                    _dataService?.ResetSessionData(); // 重置会话数据
+                    
+                    // 启动定时汇报
+                    StartPeriodicReporting();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 设备连接失败: {ex.Message}");
+                _dataService?.UpdateDeviceStatus(false, "", "设备连接失败");
+            }
+        }
+
+        /// <summary>
+        /// 启动定时汇报（每秒一次）
+        /// </summary>
+        private void StartPeriodicReporting()
+        {
+            try
+            {
+                // 停止现有定时器
+                StopPeriodicReporting();
+                
+                // 启动新的定时器
+                _reportTimer = new System.Threading.Timer(OnPeriodicReport, null, 
+                    TimeSpan.FromMilliseconds(REPORT_INTERVAL_MS), 
+                    TimeSpan.FromMilliseconds(REPORT_INTERVAL_MS));
+                
+                System.Diagnostics.Debug.WriteLine("KeepAliveService: 定时汇报已启动，间隔1秒");
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 启动定时汇报失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 停止定时汇报
+        /// </summary>
+        private void StopPeriodicReporting()
+        {
+            try
+            {
+                _reportTimer?.Dispose();
+                _reportTimer = null;
+                System.Diagnostics.Debug.WriteLine("KeepAliveService: 定时汇报已停止");
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 停止定时汇报失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 定时汇报回调方法
+        /// </summary>
+        private async void OnPeriodicReport(object state)
+        {
+            try
+            {
+                if (!_isServiceRunning) return;
+
+                int currentHeartRate;
+                lock (_heartRateLock)
+                {
+                    currentHeartRate = _latestHeartRate;
+                }
+
+                // 无论心率数据是否更新，都进行汇报
+                //System.Diagnostics.Debug.WriteLine($"KeepAliveService: 定时汇报 - 心率: {currentHeartRate} bpm");
+                
+                // 更新数据服务（触发UI更新）
+                if (currentHeartRate > 0)
+                {
+                    _dataService?.UpdateHeartRateData(currentHeartRate);
+                }
+
+                // 发送到WebSocket服务器
+                if (_webSocketClient != null)
+                {
+                    await SendHeartRateToServerAsync(currentHeartRate);
+                }
+
+                // 更新通知
+                var message = currentHeartRate > 0 ? $"最新心率: {currentHeartRate} BPM" : "等待心率数据...";
+                UpdateNotification(message);
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 定时汇报失败: {ex.Message}");
+            }
+        }
+
+        private async Task SendHeartRateToServerAsync(int heartRate)
+        {
+            try
+            {
+                if (_webSocketClient == null) return;
+
+                var data = new WebSocketService.HeartRateData
+                {
+                    HeartRate = heartRate,
+                    Timestamp = DateTime.Now,
+                    DeviceName = _bluetoothService?.ConnectedDevice?.Name ?? "未知设备"
+                };
+
+                await _webSocketClient.SendHeartRateDataAsync(data);
+                //System.Diagnostics.Debug.WriteLine($"KeepAliveService: 心率数据已发送到服务器: {heartRate} bpm");
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 发送心率数据失败: {ex.Message}");
+                _dataService?.UpdateServiceStatus(true, "后台服务运行中", false);
             }
         }
 
@@ -390,7 +360,7 @@ namespace HeartRateMonitorAndroid.Platforms.Android
                 var notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                     .SetContentTitle("心率监测服务")
                     .SetContentText(message)
-                    .SetSmallIcon(Resource.Drawable.abc_dialog_material_background) // 使用系统图标
+                    .SetSmallIcon(Resource.Drawable.abc_dialog_material_background)
                     .SetContentIntent(pendingIntent)
                     .SetOngoing(true)
                     .Build();
@@ -404,65 +374,52 @@ namespace HeartRateMonitorAndroid.Platforms.Android
             }
         }
 
-        private void ScheduleJobService()
+        private string GetServerUrl()
         {
             try
             {
-                var jobScheduler = GetSystemService(JobSchedulerService) as JobScheduler;
-                var jobInfo = new JobInfo.Builder(1002, new ComponentName(this, Java.Lang.Class.FromType(typeof(HeartRateJobService))))
-                    .SetRequiredNetworkType(NetworkType.Any)
-                    .SetPersisted(true)
-                    .SetPeriodic(15 * 60 * 1000) // 15分钟
-                    .SetRequiresCharging(false)
-                    .SetRequiresDeviceIdle(false)
-                    .Build();
-
-                jobScheduler?.Schedule(jobInfo);
+                // 从资源文件读取服���器地址
+                using var stream = Assets.Open("server.txt");
+                using var reader = new System.IO.StreamReader(stream);
+                return reader.ReadToEnd().Trim();
             }
-            catch (System.Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"ScheduleJobService Error: {ex.Message}");
+                return "wss://ws.nuanr-mxi.com/ws"; // 默认服务器地址
             }
         }
 
         public override void OnDestroy()
         {
-            _isServiceRunning = false;
-            _heartRateTimer?.Stop();
-            _heartRateTimer?.Dispose();
-            _webSocketClient?.Dispose();
-            _wakeLock?.Release();
-            
-            // 服务被销毁时，立即重启
-            RestartService();
-            
-            base.OnDestroy();
-        }
-
-        private void RestartService()
-        {
             try
             {
-                var intent = new Intent(this, typeof(HeartRateKeepAliveService));
-                if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
-                {
-                    StartForegroundService(intent);
-                }
-                else
-                {
-                    StartService(intent);
-                }
+                _isServiceRunning = false;
+                
+                // 停止定时汇报
+                StopPeriodicReporting();
+                
+                // 清理资源
+                _bluetoothService?.Dispose();
+                _webSocketClient?.Dispose();
+                _wakeLock?.Release();
+                
+                _dataService?.UpdateServiceStatus(false, "服务已停止", false);
+                
+                System.Diagnostics.Debug.WriteLine("KeepAliveService: 服务已停止");
             }
             catch (System.Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"RestartService Error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"KeepAliveService: 服务停止时发生错误: {ex.Message}");
             }
+            
+            base.OnDestroy();
         }
 
         public override void OnTaskRemoved(Intent rootIntent)
         {
             // 当任务被移除时重启服务
-            RestartService();
+            var intent = new Intent(this, typeof(HeartRateKeepAliveService));
+            StartForegroundService(intent);
             base.OnTaskRemoved(rootIntent);
         }
     }
